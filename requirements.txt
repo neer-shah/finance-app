@@ -2,3 +2,5 @@ streamlit
 pandas
 plotly
 numpy
+typesafe-sdk
+python-dotenv

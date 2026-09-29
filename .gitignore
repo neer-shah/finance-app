@@ -1,5 +1,15 @@
+# Secrets
+.env
+
+# Agent instructions
+agent-instructions
+
 # Categories
 categories.json
 
 # Virtual environment
 .venv
+
+# Personal data / cache
+transactions.csv
+jev_cache.json
