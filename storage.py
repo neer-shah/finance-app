@@ -1,6 +1,8 @@
 """Persistence for categories and categorised transactions."""
 import json
 import os
+import re
+from datetime import datetime
 
 import pandas as pd
 
@@ -82,3 +84,51 @@ def new_rows_only(new_df: pd.DataFrame, saved_df: pd.DataFrame | None) -> pd.Dat
     saved_keys = set(map(tuple, saved_df[KEY_COLUMNS].astype(str).values))
     new_keys = map(tuple, new_df[KEY_COLUMNS].astype(str).values)
     return new_df[[key not in saved_keys for key in new_keys]]
+
+
+# ----- Named snapshots (table + summary), stored as JSON files inside the app folder -----
+SNAPSHOT_DIR = "snapshots"
+
+
+def _snapshot_path(name: str) -> str:
+    slug = re.sub(r"[^\w\- ]", "_", name).strip() or "snapshot"
+    return os.path.join(SNAPSHOT_DIR, f"{slug}.json")
+
+
+def save_snapshot(name: str, df: pd.DataFrame) -> None:
+    """Save the current table and its category summary under a user-chosen name."""
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    summary = df.groupby("Category")["Paid out"].sum().reset_index().sort_values("Paid out", ascending=False)
+    snapshot = {
+        "name": name,
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "transactions": json.loads(df.to_json(orient="records", date_format="iso")),
+        "summary": summary.to_dict(orient="records"),
+    }
+    with open(_snapshot_path(name), "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, indent=2)
+
+
+def list_snapshots() -> list[str]:
+    """Snapshot names, newest first."""
+    if not os.path.isdir(SNAPSHOT_DIR):
+        return []
+    found = []
+    for file in os.listdir(SNAPSHOT_DIR):
+        if file.endswith(".json"):
+            with open(os.path.join(SNAPSHOT_DIR, file), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            found.append((data["saved_at"], data["name"]))
+    return [name for _, name in sorted(found, reverse=True)]
+
+
+def load_snapshot(name: str) -> dict:
+    with open(_snapshot_path(name), "r", encoding="utf-8") as f:
+        data = json.load(f)
+    table = pd.DataFrame(data["transactions"])
+    table["Date"] = pd.to_datetime(table["Date"])
+    return {"saved_at": data["saved_at"], "table": table, "summary": pd.DataFrame(data["summary"])}
+
+
+def delete_snapshot(name: str) -> None:
+    os.remove(_snapshot_path(name))

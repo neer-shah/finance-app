@@ -13,3 +13,6 @@ categories.json
 # Personal data / cache
 transactions.csv
 jev_cache.json
+
+# Saved snapshots
+snapshots

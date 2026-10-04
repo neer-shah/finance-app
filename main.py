@@ -72,8 +72,69 @@ def add_new_transactions(new_df):
     st.success(f"Added {len(new_df)} new transactions.")
 
 
+def show_summary(category_totals):
+    st.subheader("Expense Summary")
+    st.dataframe(
+        category_totals,
+        column_config={"Paid out": st.column_config.NumberColumn("Paid out", format="£%.2f")},
+        hide_index=True,
+    )
+    fig = px.pie(category_totals, values="Paid out", names="Category", title="Expenses by Category")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def show_snapshot(name):
+    snapshot = storage.load_snapshot(name)
+    st.header(f"Snapshot: {name}")
+    st.caption(f"Saved {snapshot['saved_at'].replace('T', ' ')} - this is a read-only copy.")
+    st.subheader("Your Expenses")
+    st.dataframe(
+        snapshot["table"],
+        column_config={
+            "Date": st.column_config.DateColumn(label="Date", format="DD/MM/YYYY"),
+            "Confidence": st.column_config.NumberColumn("Confidence", format="%.2f"),
+        },
+        use_container_width=True,
+    )
+    show_summary(snapshot["summary"])
+
+
+def sidebar():
+    """Save the current view and browse saved snapshots (stored in the app's 'snapshots' folder)."""
+    st.sidebar.header("Saved snapshots")
+    if st.session_state.df is not None:
+        name = st.sidebar.text_input("Snapshot name", key="snapshot_name").strip()
+        if st.sidebar.button("Save current table & summary", disabled=not name):
+            storage.save_snapshot(name, st.session_state.df)
+            st.session_state.viewing = name
+            st.rerun()
+
+    names = storage.list_snapshots()
+    if st.session_state.get("viewing") not in names:
+        st.session_state.viewing = None
+    if not names:
+        st.sidebar.caption("No snapshots yet.")
+        return
+    if st.session_state.viewing and st.sidebar.button("← Back to live data"):
+        st.session_state.viewing = None
+        st.rerun()
+    for n in names:
+        row = st.sidebar.columns([5, 1])
+        if row[0].button(n, key=f"open_{n}", use_container_width=True,
+                         type="primary" if n == st.session_state.viewing else "secondary"):
+            st.session_state.viewing = n
+            st.rerun()
+        if row[1].button("🗑", key=f"del_{n}", help=f"Delete '{n}'"):
+            storage.delete_snapshot(n)
+            st.rerun()
+
+
 def main():
     st.title("Simple Finance Dashboard")
+    sidebar()
+    if st.session_state.get("viewing"):
+        show_snapshot(st.session_state.viewing)
+        return
 
     if not jev_available():
         st.warning("TYPESAFE_API_KEY is not set - Jev is disabled, new transactions will stay Uncategorised.")
@@ -159,25 +220,8 @@ def main():
                 st.success("Changes saved successfully!")
                 st.rerun()
 
-            st.subheader("Expense Summary")
             category_totals = st.session_state.df.groupby("Category")["Paid out"].sum().reset_index()
-            category_totals = category_totals.sort_values("Paid out", ascending=False)
-
-            st.dataframe(
-                category_totals,
-                column_config={
-                    "Paid out": st.column_config.NumberColumn("Paid out", format="£%.2f")
-                },
-                hide_index=True
-            )
-
-            fig = px.pie(
-                category_totals,
-                values="Paid out",
-                names="Category",
-                title="Expenses by Category"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            show_summary(category_totals.sort_values("Paid out", ascending=False))
 
 
 main()
